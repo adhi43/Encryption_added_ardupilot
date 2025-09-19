@@ -39,10 +39,10 @@
 #endif  // HAL_GCS_IGNORE_PARAM_SET_DEFAULT
 
 // macros used to determine if a message will fit in the space available.
-
+// Add these in GCS.h, inside the GCS_MAVLINK class definition
 void gcs_out_of_space_to_send(mavlink_channel_t chan);
 bool check_payload_size(mavlink_channel_t chan, uint16_t max_payload_len);
-
+// Add this function declaration (prototype) in GCS.h
 // important note: despite the names, these messages do NOT check to
 // see if the payload will fit in the buffer.  They check to see if
 // the packed message along with any channel overhead will fit.
@@ -195,7 +195,7 @@ public:
     void        send_text(MAV_SEVERITY severity, const char *fmt, ...) const FMT_PRINTF(3, 4);
     void        queued_param_send();
     void        queued_mission_request_send();
-
+    void send_auth_challenge();
     bool sending_mavlink1() const;
 
     // returns true if we are requesting any items from the GCS:
@@ -251,7 +251,8 @@ public:
                                         entry->max_msg_len,
                                         entry->crc_extra);
     }
-
+    void send_auth_ok_message();
+    void send_auth_failed_message(const char *reason);
     // accessor for uart
     AP_HAL::UARTDriver *get_uart() { return _port; }
 
@@ -319,7 +320,8 @@ public:
     void send_mission_current(const class AP_Mission &mission, uint16_t seq);
 
     // common send functions
-    void send_heartbeat(void) const;
+    void send_heartbeat(void);
+    void send_message(const mavlink_message_t* msg);
     void send_meminfo(void);
     void send_fence_status() const;
     void send_power_status(void);
@@ -788,6 +790,8 @@ private:
     // define the two objects used for parsing incoming messages:
     mavlink_message_t _channel_buffer;
     mavlink_status_t _channel_status;
+    bool authenticated = false;
+    uint8_t current_challenge[32];
 
     const AP_SerialManager::UARTState *uartstate;
 

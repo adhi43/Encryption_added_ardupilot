@@ -45,3 +45,6 @@
 [submodule "modules/littlefs"]
 	path = modules/littlefs
 	url = https://github.com/ArduPilot/littlefs.git
+[submodule "modules/mbedtls"]
+	path = modules/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git

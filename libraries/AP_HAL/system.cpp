@@ -1,25 +1,17 @@
-#include "system.h"
 #include "AP_HAL.h"
-#include <AP_InternalError/AP_InternalError.h>
-#include <stdio.h>
+#include "Storage.h"
+#include <AP_Math/AP_Math.h>
 
-extern const AP_HAL::HAL& hal;
-
-uint16_t WEAK AP_HAL::millis16()
+/*
+  default erase method
+ */
+bool AP_HAL::Storage::erase(void)
 {
-    return millis() & 0xFFFF;
-}
-
-uint16_t WEAK AP_HAL::micros16()
-{
-    return micros() & 0xFFFF;
-}
-
-void WEAK AP_HAL::dump_stack_trace()
-{
-    // stack dump not available on this platform
-}
-void WEAK AP_HAL::dump_core_file()
-{
-    // core dump not available on this platform
+    uint8_t blk[16] {};
+    uint32_t ofs;
+    for (ofs=0; ofs<HAL_STORAGE_SIZE; ofs += sizeof(blk)) {
+        uint32_t n = MIN(sizeof(blk), HAL_STORAGE_SIZE - ofs);
+        write_block(ofs, blk, n);
+    }
+    return true;
 }

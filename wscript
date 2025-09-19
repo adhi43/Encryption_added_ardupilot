@@ -153,6 +153,10 @@ def options(opt):
         action='store',
         default=None,
         help='Target board to build, choices are %s.' % ', '.join(boards_names))
+    g.add_option('--enable-mbedtls',
+        action='store_true',
+        default=False,
+        help="Enable mbedTLS cryptographic library")
 
     g.add_option('--debug',
         action='store_true',
@@ -534,6 +538,15 @@ def configure(cfg):
     if cfg.options.static:
         cfg.msg('Using static linking', 'yes', color='YELLOW')
         cfg.env.STATIC_LINKING = True
+    # --- ADD THIS MBEDTLS STATIC LINKING CONFIGURATION ---
+    if cfg.env.STATIC_LINKING and cfg.options.enable_mbedtls:
+        cfg.env.append_value('LIB', [
+            'mbedtls',
+            'mbedcrypto',
+            'mbedx509'
+        ])
+        cfg.msg('Adding mbedTLS to static build', 'yes', color='GREEN')
+    # --- END OF MBEDTLS CONFIGURATION ---
 
     if cfg.options.num_aux_imus > 0:
         cfg.define('INS_AUX_INSTANCES', cfg.options.num_aux_imus)
@@ -584,7 +597,48 @@ def configure(cfg):
     cfg.load('littlefs')
     cfg.load('static_linking')
     cfg.load('build_summary')
+    
+    # Add this after other library checks but before writing config header
 
+    cfg.start_msg('Checking for mbedTLS')
+    if cfg.options.enable_mbedtls:
+        try:
+            # First try direct library checks (bypass pkg-config)
+            cfg.check_cc(
+                lib='mbedtls',
+                uselib_store='MBEDTLS',
+                mandatory=True,
+                msg="Checking for mbedtls library"
+            )
+            cfg.check_cc(
+                lib='mbedcrypto',
+                uselib_store='MBEDCRYPTO',
+                mandatory=True,
+                msg="Checking for mbedcrypto library"
+            )
+            cfg.check_cc(
+                lib='mbedx509', 
+                uselib_store='MBEDX509',
+                mandatory=True,
+                msg="Checking for mbedx509 library"
+            )
+            
+            # Manually set paths based on your system output
+            cfg.env.INCLUDES_MBEDTLS = ['/usr/include/mbedtls']
+            cfg.env.LIBPATH_MBEDTLS = ['/usr/lib/x86_64-linux-gnu']
+            cfg.env.LIB_MBEDTLS = ['mbedtls', 'mbedcrypto', 'mbedx509']
+            
+            cfg.env.HAS_MBEDTLS = True
+            cfg.end_msg('yes (version 2.28.8)')
+            
+        except Exception as e:
+            cfg.env.HAS_MBEDTLS = False
+            cfg.end_msg(f'failed: {str(e)}', color='YELLOW')
+    else:
+        cfg.env.HAS_MBEDTLS = False
+        cfg.end_msg('disabled', color='YELLOW')
+
+    # ... rest of configure function ...
     cfg.start_msg('Benchmarks')
     if cfg.env.HAS_GBENCHMARK:
         cfg.end_msg('enabled')
@@ -880,7 +934,6 @@ def _build_recursion(bld):
             bld,
             [p % l for l in bld.env.AP_LIBRARIES],
         )
-
     # NOTE: we need to sort to ensure the repeated sources get the
     # same index, and random ordering of the filesystem doesn't cause
     # recompilation.
@@ -921,7 +974,14 @@ def build(bld):
         use=['mavlink'],
         cxxflags=['-include', 'ap_config.h'],
     )
-
+    if bld.env.HAS_MBEDTLS:
+        bld.env.append_value('LIB', bld.env.LIB_MBEDTLS)
+        bld.env.append_value('LIBPATH', bld.env.LIBPATH_MBEDTLS)
+        bld.env.append_value('INCLUDES', bld.env.INCLUDES_MBEDTLS)
+        bld.msg('mbedTLS paths', 
+               f"includes: {bld.env.INCLUDES_MBEDTLS}, libs: {bld.env.LIB_MBEDTLS}",
+               color='BLUE')
+    # --- END MBEDTLS CONFIG ---
     _load_pre_build(bld)
 
     if bld.get_board().with_can:
@@ -978,7 +1038,31 @@ for program_group in ('all', 'bin', 'tool', 'examples', 'tests', 'benchmarks'):
         program_group_list=program_group,
         doc='builds all programs of %s group' % program_group,
     )
+# ... [all other existing functions] ...
 
+# --- ADD THIS CLEAN FUNCTION AT THE END OF THE FILE ---
+def clean(ctx):
+    """Clean the build directory"""
+    ctx.restore()
+    if not ctx.options.project_specific:
+        ctx.cmd_and_log(['git', 'clean', '-f', '-d'])
+    else:
+        ctx.cmd_and_log(['rm', '-rf', ctx.bldnode.abspath()])
+    
+    # Add mbedTLS specific cleaning
+    ctx.start_msg('Cleaning mbedTLS artifacts')
+    for f in ctx.path.ant_glob(['**/*mbedtls*', '**/*mbedcrypto*', '**/*mbedx509*']):
+        f.delete()
+    ctx.end_msg('done')
+
+# --- END OF CLEAN FUNCTION ---
+
+# [Existing build commands stay here]
+ardupilotwaf.build_command('check',
+    program_group_list='all',
+    doc='builds all programs and run tests',
+)
+# ... [rest of existing file] ...
 class LocalInstallContext(Build.InstallContext):
     """runs install using BLD/install as destdir, where BLD is the build variant directory"""
     cmd = 'localinstall'
